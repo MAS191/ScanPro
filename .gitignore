@@ -1,0 +1,78 @@
+# ScanPro Project - Git Ignore Rules
+
+# Python Runtime
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.installed.cfg
+*.egg
+build/
+dist/
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Operating System
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ScanPro Specific Output Files
+scan_results_*.json
+scan_results_*.txt
+results.json
+results.txt
+scan_report_*.json
+scan_report_*.txt
+port_scan_*.json
+port_scan_*.txt
+
+# Target Lists (potentially sensitive)
+targets.txt
+target_list.txt
+hosts.txt
+ip_list.txt
+
+# Log Files
+*.log
+scanpro.log
+error.log
+debug.log
+
+# Temporary Files
+*.tmp
+*.temp
+temp_*
+.scanpro_temp
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+test_*.py
+*_test.py
+tests/
+
+# Configuration Files (potentially sensitive)
+config.json
+settings.json
+local_config.py
+
+# Documentation Drafts (keep clean for GitHub)
+*_DRAFT.md
+NOTES.md
+TODO.md
+PROJECT_CLEAN.md

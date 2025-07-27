@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ScanPro - Web Interface</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .scan-card { transition: transform 0.2s; }
+        .scan-card:hover { transform: translateY(-5px); }
+        .status-running { color: #0d6efd; }
+        .status-completed { color: #198754; }
+        .status-error { color: #dc3545; }
+        .port-badge { font-size: 0.8em; margin: 2px; }
+        .legal-warning { 
+            background: linear-gradient(45deg, #fff3cd, #ffeaa7);
+            border-left: 4px solid #e67e22;
+        }
+        body { background-color: #f8f9fa; }
+        .navbar-brand { font-weight: bold; }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-search me-2"></i>ScanPro Web Interface
+            </a>
+            <div class="navbar-nav ms-auto">
+                <span class="navbar-text" id="autoRefreshStatus">
+                    <i class="fas fa-sync-alt fa-spin me-1 text-success"></i>
+                    <small>Auto-refresh ON</small>
+                </span>
+                <span class="navbar-text ms-3">
+                    <small>v1.0.0</small>
+                </span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- Legal Warning -->
+        <div class="alert legal-warning" role="alert">
+            <h5><i class="fas fa-exclamation-triangle me-2"></i>Legal Notice</h5>
+            <p class="mb-0">
+                <strong>Only scan systems you own or have explicit permission to test!</strong>
+                This includes localhost, your VMs, lab machines, and containers. Never scan external systems without authorization.
+            </p>
+        </div>
+
+        <div class="row">
+            <!-- Scan Configuration -->
+            <div class="col-lg-6">
+                <div class="card shadow">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="fas fa-cog me-2"></i>New Scan</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="scanForm">
+                            <!-- Target Configuration -->
+                            <div class="mb-3">
+                                <label for="targets" class="form-label">
+                                    <i class="fas fa-bullseye me-1"></i>Targets
+                                </label>
+                                <input type="text" class="form-control" id="targets" name="targets" 
+                                       value="127.0.0.1" placeholder="127.0.0.1, 192.168.56.101, 192.168.1.100">
+                                <div class="form-text">Common safe targets: localhost (127.0.0.1), VirtualBox VMs (192.168.56.x), VMware VMs (192.168.1.x). Other targets require confirmation.</div>
+                            </div>
+
+                            <!-- Port Configuration -->
+                            <div class="mb-3">
+                                <label for="ports" class="form-label">
+                                    <i class="fas fa-network-wired me-1"></i>Ports
+                                </label>
+                                <select class="form-select" id="ports" name="ports">
+                                    <option value="top20" selected>Top 20 Ports</option>
+                                    <option value="top100">Top 100 Ports</option>
+                                    <option value="web">Web Ports ({{ presets.web }} ports)</option>
+                                    <option value="mail">Mail Ports ({{ presets.mail }} ports)</option>
+                                    <option value="db">Database Ports ({{ presets.db }} ports)</option>
+                                    <option value="remote">Remote Access ({{ presets.remote }} ports)</option>
+                                    <option value="custom">Custom Range</option>
+                                </select>
+                                <input type="text" class="form-control mt-2 d-none" id="customPorts" 
+                                       placeholder="80,443,8080 or 1-1000">
+                            </div>
+
+                            <!-- Scan Profile -->
+                            <div class="mb-3">
+                                <label for="profile" class="form-label">
+                                    <i class="fas fa-tachometer-alt me-1"></i>Scan Profile
+                                </label>
+                                <select class="form-select" id="profile" name="profile">
+                                    {% for name, desc in profiles.items() %}
+                                    <option value="{{ name }}" {% if name == 'default' %}selected{% endif %}>
+                                        {{ name.title() }} - {{ desc }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <!-- Advanced Options -->
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="timeout" class="form-label">
+                                        <i class="fas fa-clock me-1"></i>Timeout (seconds)
+                                    </label>
+                                    <input type="number" class="form-control" id="timeout" name="timeout" 
+                                           value="3" min="1" max="60" step="0.1">
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="threads" class="form-label">
+                                        <i class="fas fa-layer-group me-1"></i>Threads
+                                    </label>
+                                    <input type="number" class="form-control" id="threads" name="threads" 
+                                           value="100" min="1" max="500">
+                                </div>
+                            </div>
+
+                            <!-- Scan Button -->
+                            <button type="submit" class="btn btn-primary btn-lg w-100" id="scanBtn">
+                                <i class="fas fa-play me-2"></i>Start Scan
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active Scans & Results -->
+            <div class="col-lg-6">
+                <div class="card shadow">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0"><i class="fas fa-list me-2"></i>Scan Results</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="scanResults">
+                            <div class="text-center text-muted">
+                                <i class="fas fa-search fa-3x mb-3"></i>
+                                <p>No scans yet. Start your first scan above!</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Scans -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card shadow">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0"><i class="fas fa-history me-2"></i>Scan History</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="scanHistory">
+                            <div class="text-center text-muted">
+                                <p>Scan history will appear here</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div class="modal fade" id="confirmationModal" tabindex="-1" aria-labelledby="confirmationModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-warning">
+                    <h5 class="modal-title" id="confirmationModalLabel">
+                        <i class="fas fa-exclamation-triangle me-2"></i>Confirm External Target Scanning
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <strong>⚠️ Legal Warning:</strong> You are about to scan non-localhost targets.
+                    </div>
+                    <p><strong>Targets to scan:</strong></p>
+                    <ul id="targetList" class="mb-3"></ul>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="ownershipConfirm">
+                        <label class="form-check-label" for="ownershipConfirm">
+                            <strong>I confirm that I own these systems or have explicit written permission to scan them</strong>
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="legalConfirm">
+                        <label class="form-check-label" for="legalConfirm">
+                            <strong>I understand this scanning may be illegal if performed on systems I don't own</strong>
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-warning" id="confirmScanBtn" disabled>
+                        <i class="fas fa-shield-alt me-2"></i>I Own These Systems - Proceed
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Global variables
+        let currentScanId = null;
+        let pollInterval = null;
+        let historyRefreshInterval = null;
+        let autoRefreshEnabled = true;
+
+        // DOM ready
+        document.addEventListener('DOMContentLoaded', function() {
+            setupEventListeners();
+            loadScanHistory();
+            startHistoryAutoRefresh();
+        });
+
+        function setupEventListeners() {
+            // Custom ports toggle
+            document.getElementById('ports').addEventListener('change', function() {
+                const customInput = document.getElementById('customPorts');
+                if (this.value === 'custom') {
+                    customInput.classList.remove('d-none');
+                    customInput.focus();
+                } else {
+                    customInput.classList.add('d-none');
+                }
+            });
+
+            // Form submission
+            document.getElementById('scanForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                startScan();
+            });
+
+            // Page visibility change - pause/resume auto-refresh when tab is hidden/shown
+            document.addEventListener('visibilitychange', function() {
+                if (document.hidden) {
+                    // Tab is hidden, pause auto-refresh
+                    pauseAutoRefresh();
+                } else {
+                    // Tab is visible, resume auto-refresh
+                    resumeAutoRefresh();
+                }
+            });
+        }
+
+        function startHistoryAutoRefresh() {
+            // Refresh scan history every 10 seconds
+            historyRefreshInterval = setInterval(() => {
+                if (autoRefreshEnabled && !currentScanId) {
+                    loadScanHistory();
+                }
+            }, 10000);
+        }
+
+        function pauseAutoRefresh() {
+            autoRefreshEnabled = false;
+            if (historyRefreshInterval) {
+                clearInterval(historyRefreshInterval);
+                historyRefreshInterval = null;
+            }
+            updateAutoRefreshStatus();
+        }
+
+        function resumeAutoRefresh() {
+            autoRefreshEnabled = true;
+            if (!historyRefreshInterval) {
+                startHistoryAutoRefresh();
+            }
+            updateAutoRefreshStatus();
+            // Immediately refresh when tab becomes visible
+            if (!currentScanId) {
+                loadScanHistory();
+            }
+        }
+
+        function updateAutoRefreshStatus() {
+            const statusElement = document.getElementById('autoRefreshStatus');
+            if (statusElement) {
+                if (autoRefreshEnabled) {
+                    statusElement.innerHTML = `
+                        <i class="fas fa-sync-alt fa-spin me-1 text-success"></i>
+                        <small>Auto-refresh ON</small>
+                    `;
+                } else {
+                    statusElement.innerHTML = `
+                        <i class="fas fa-pause me-1 text-warning"></i>
+                        <small>Auto-refresh PAUSED</small>
+                    `;
+                }
+            }
+        }
+
+        function startScan(confirmedScan = false) {
+            const formData = new FormData(document.getElementById('scanForm'));
+            
+            // Handle custom ports
+            if (formData.get('ports') === 'custom') {
+                const customPorts = document.getElementById('customPorts').value;
+                if (!customPorts.trim()) {
+                    alert('Please enter custom ports');
+                    return;
+                }
+                formData.set('ports', customPorts);
+            }
+
+            // Add confirmation flag if this is a confirmed scan
+            if (confirmedScan) {
+                formData.set('confirmed_scan', 'true');
+            }
+
+            // Disable scan button
+            const scanBtn = document.getElementById('scanBtn');
+            scanBtn.disabled = true;
+            scanBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Starting...';
+
+            fetch('/scan', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    currentScanId = data.scan_id;
+                    showScanProgress(data.scan_id);
+                    startPolling(data.scan_id);
+                } else if (data.need_confirmation) {
+                    // Show confirmation modal for non-localhost targets
+                    showConfirmationModal(data.non_localhost_targets);
+                    resetScanButton();
+                } else {
+                    alert('Error: ' + (data.error || data.message));
+                    resetScanButton();
+                }
+            })
+            .catch(error => {
+                alert('Network error: ' + error);
+                resetScanButton();
+            });
+        }
+
+        function showConfirmationModal(targets) {
+            // Populate target list
+            const targetList = document.getElementById('targetList');
+            targetList.innerHTML = '';
+            targets.forEach(target => {
+                const li = document.createElement('li');
+                li.textContent = target;
+                targetList.appendChild(li);
+            });
+
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('confirmationModal'));
+            modal.show();
+
+            // Setup confirmation button logic
+            setupConfirmationHandlers();
+        }
+
+        function setupConfirmationHandlers() {
+            const ownershipCheck = document.getElementById('ownershipConfirm');
+            const legalCheck = document.getElementById('legalConfirm');
+            const confirmBtn = document.getElementById('confirmScanBtn');
+
+            // Enable confirm button only when both checkboxes are checked
+            function updateConfirmButton() {
+                confirmBtn.disabled = !(ownershipCheck.checked && legalCheck.checked);
+            }
+
+            ownershipCheck.addEventListener('change', updateConfirmButton);
+            legalCheck.addEventListener('change', updateConfirmButton);
+
+            // Handle confirm button click
+            confirmBtn.onclick = function() {
+                if (ownershipCheck.checked && legalCheck.checked) {
+                    // Hide modal and start confirmed scan
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('confirmationModal'));
+                    modal.hide();
+                    
+                    // Reset checkboxes for next time
+                    ownershipCheck.checked = false;
+                    legalCheck.checked = false;
+                    confirmBtn.disabled = true;
+                    
+                    // Start the scan with confirmation
+                    startScan(true);
+                }
+            };
+        }
+
+        function resetScanButton() {
+            const scanBtn = document.getElementById('scanBtn');
+            scanBtn.disabled = false;
+            scanBtn.innerHTML = '<i class="fas fa-play me-2"></i>Start Scan';
+        }
+
+        function showScanProgress(scanId) {
+            const resultsDiv = document.getElementById('scanResults');
+            resultsDiv.innerHTML = `
+                <div class="text-center">
+                    <div class="spinner-border text-primary mb-3" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <h6>Scan in Progress</h6>
+                    <p class="text-muted">Scan ID: ${scanId}</p>
+                    <p class="small text-info">
+                        <i class="fas fa-sync-alt fa-spin me-1"></i>Auto-refreshing results...
+                    </p>
+                    <div class="progress mb-3">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             role="progressbar" style="width: 0%" id="scanProgressBar"></div>
+                    </div>
+                    <div class="alert alert-info small">
+                        <i class="fas fa-info-circle me-1"></i>
+                        Results will appear here automatically when the scan completes.
+                        No need to refresh the page!
+                    </div>
+                </div>
+            `;
+        }
+
+        function startPolling(scanId) {
+            let pollCount = 0;
+            pollInterval = setInterval(() => {
+                pollCount++;
+                fetch(`/scan/${scanId}/status`)
+                .then(response => response.json())
+                .then(data => {
+                    // Update progress bar if available
+                    const progressBar = document.getElementById('scanProgressBar');
+                    if (progressBar && data.progress !== undefined) {
+                        progressBar.style.width = `${data.progress}%`;
+                        progressBar.setAttribute('aria-valuenow', data.progress);
+                    }
+
+                    // Update status text
+                    updateScanStatus(data, pollCount);
+
+                    if (data.status === 'completed') {
+                        clearInterval(pollInterval);
+                        showScanResults(data);
+                        resetScanButton();
+                        currentScanId = null;
+                        loadScanHistory(); // Refresh history after completion
+                        showSuccessToast('Scan completed successfully!');
+                    } else if (data.status === 'error') {
+                        clearInterval(pollInterval);
+                        showScanError(data.error || 'Unknown error');
+                        resetScanButton();
+                        currentScanId = null;
+                        loadScanHistory(); // Refresh history after error
+                        showErrorToast('Scan failed: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Polling error:', error);
+                    // Don't stop polling on network errors, just log them
+                });
+            }, 1500); // Poll every 1.5 seconds for faster updates
+        }
+
+        function updateScanStatus(data, pollCount) {
+            const resultsDiv = document.getElementById('scanResults');
+            if (data.status === 'running' || data.status === 'scanning') {
+                // Find the status text and update it
+                const statusElement = resultsDiv.querySelector('h6');
+                if (statusElement) {
+                    const dots = '.'.repeat((pollCount % 3) + 1);
+                    statusElement.innerHTML = `Scan in Progress${dots}`;
+                }
+                
+                // Update the auto-refresh text
+                const infoElement = resultsDiv.querySelector('.text-info');
+                if (infoElement) {
+                    const elapsed = Math.floor(pollCount * 1.5);
+                    infoElement.innerHTML = `
+                        <i class="fas fa-sync-alt fa-spin me-1"></i>
+                        Auto-refreshing results... (${elapsed}s elapsed)
+                    `;
+                }
+            }
+        }
+
+        function showScanResults(scanData) {
+            const results = scanData.results;
+            const summary = results.summary;
+            
+            let html = `
+                <div class="alert alert-success">
+                    <h6><i class="fas fa-check-circle me-2"></i>Scan Completed</h6>
+                    <small>Scan ID: ${scanData.id} | Completed: ${new Date().toLocaleTimeString()}</small>
+                </div>
+                
+                <div class="row text-center mb-3">
+                    <div class="col-3">
+                        <div class="badge bg-primary fs-6">${summary.total_hosts}</div>
+                        <div class="small">Hosts</div>
+                    </div>
+                    <div class="col-3">
+                        <div class="badge bg-success fs-6">${summary.live_hosts}</div>
+                        <div class="small">Live</div>
+                    </div>
+                    <div class="col-3">
+                        <div class="badge bg-info fs-6">${summary.total_ports}</div>
+                        <div class="small">Ports</div>
+                    </div>
+                    <div class="col-3">
+                        <div class="badge bg-warning fs-6">${summary.open_ports}</div>
+                        <div class="small">Open</div>
+                    </div>
+                </div>
+            `;
+
+            // Show host results
+            results.hosts.forEach(host => {
+                html += `
+                    <div class="border rounded p-3 mb-2">
+                        <h6>${host.host} ${host.is_alive ? '<span class="badge bg-success">UP</span>' : '<span class="badge bg-secondary">DOWN</span>'}</h6>
+                `;
+                
+                if (host.open_ports.length > 0) {
+                    html += '<div class="mb-2"><strong>Open Ports:</strong><br>';
+                    host.open_ports.forEach(port => {
+                        html += `<span class="badge bg-success port-badge">${port.port}/tcp`;
+                        if (port.service) html += ` (${port.service})`;
+                        html += '</span>';
+                    });
+                    html += '</div>';
+                }
+                
+                html += '</div>';
+            });
+
+            html += `
+                <div class="text-center mt-3">
+                    <a href="/scan/${scanData.id}/results" class="btn btn-outline-primary btn-sm me-2">
+                        <i class="fas fa-eye me-1"></i>Detailed View
+                    </a>
+                    <a href="/api/scan/${scanData.id}/download" class="btn btn-outline-secondary btn-sm">
+                        <i class="fas fa-download me-1"></i>Download JSON
+                    </a>
+                </div>
+                <div class="text-center mt-2">
+                    <small class="text-success">
+                        <i class="fas fa-check me-1"></i>Results automatically refreshed
+                    </small>
+                </div>
+            `;
+
+            document.getElementById('scanResults').innerHTML = html;
+        }
+
+        function showScanError(error) {
+            document.getElementById('scanResults').innerHTML = `
+                <div class="alert alert-danger">
+                    <h6><i class="fas fa-exclamation-circle me-2"></i>Scan Failed</h6>
+                    <p class="mb-1">${error}</p>
+                    <small class="text-muted">Failed at: ${new Date().toLocaleTimeString()}</small>
+                </div>
+            `;
+        }
+
+        function showSuccessToast(message) {
+            createToast(message, 'success');
+        }
+
+        function showErrorToast(message) {
+            createToast(message, 'danger');
+        }
+
+        function createToast(message, type) {
+            // Create toast container if it doesn't exist
+            let toastContainer = document.getElementById('toast-container');
+            if (!toastContainer) {
+                toastContainer = document.createElement('div');
+                toastContainer.id = 'toast-container';
+                toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
+                toastContainer.style.zIndex = '9999';
+                document.body.appendChild(toastContainer);
+            }
+
+            // Create toast
+            const toastId = 'toast-' + Date.now();
+            const toastHtml = `
+                <div id="${toastId}" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+                    <div class="toast-header bg-${type} text-white">
+                        <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-triangle'} me-2"></i>
+                        <strong class="me-auto">ScanPro</strong>
+                        <small>${new Date().toLocaleTimeString()}</small>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+                    </div>
+                    <div class="toast-body">${message}</div>
+                </div>
+            `;
+            
+            toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+            
+            // Show toast
+            const toastElement = document.getElementById(toastId);
+            const toast = new bootstrap.Toast(toastElement, { delay: 4000 });
+            toast.show();
+            
+            // Remove toast element after it's hidden
+            toastElement.addEventListener('hidden.bs.toast', function() {
+                toastElement.remove();
+            });
+        }
+
+        function loadScanHistory() {
+            fetch('/api/scans')
+            .then(response => response.json())
+            .then(scans => {
+                const historyDiv = document.getElementById('scanHistory');
+                
+                if (Object.keys(scans).length === 0) {
+                    historyDiv.innerHTML = `
+                        <div class="text-center text-muted">
+                            <p>No scan history yet</p>
+                            <small>Last updated: ${new Date().toLocaleTimeString()}</small>
+                        </div>
+                    `;
+                    return;
+                }
+
+                let html = '<div class="row">';
+                Object.values(scans).forEach(scan => {
+                    const statusClass = scan.status === 'completed' ? 'success' : 
+                                       scan.status === 'error' ? 'danger' : 'primary';
+                    
+                    // Add running indicator for active scans
+                    const statusBadge = scan.status === 'running' || scan.status === 'scanning' ? 
+                        `<span class="badge bg-${statusClass}">
+                            <i class="fas fa-spinner fa-spin me-1"></i>${scan.status}
+                        </span>` :
+                        `<span class="badge bg-${statusClass}">${scan.status}</span>`;
+                    
+                    html += `
+                        <div class="col-md-6 mb-3">
+                            <div class="card scan-card">
+                                <div class="card-body">
+                                    <h6 class="card-title">
+                                        ${scan.config.targets.join(', ')}
+                                        ${statusBadge}
+                                    </h6>
+                                    <p class="card-text small">
+                                        <i class="fas fa-clock me-1"></i>${new Date(scan.start_time).toLocaleString()}<br>
+                                        <i class="fas fa-network-wired me-1"></i>${scan.config.ports} ports
+                                    </p>
+                                    ${scan.status === 'completed' ? 
+                                        `<a href="/scan/${scan.id}/results" class="btn btn-sm btn-outline-primary">View Results</a>` : 
+                                        scan.status === 'running' || scan.status === 'scanning' ?
+                                        `<span class="text-info small"><i class="fas fa-sync-alt fa-spin me-1"></i>In progress...</span>` :
+                                        ''
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                
+                // Add last updated timestamp
+                html += `
+                    <div class="text-center mt-2">
+                        <small class="text-muted">
+                            <i class="fas fa-sync-alt me-1"></i>
+                            Last updated: ${new Date().toLocaleTimeString()}
+                            ${autoRefreshEnabled ? '(Auto-refresh enabled)' : '(Auto-refresh paused)'}
+                        </small>
+                    </div>
+                `;
+                
+                historyDiv.innerHTML = html;
+            })
+            .catch(error => {
+                console.error('Error loading scan history:', error);
+                const historyDiv = document.getElementById('scanHistory');
+                historyDiv.innerHTML = `
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        Error loading scan history. Will retry automatically.
+                    </div>
+                `;
+            });
+        }
+    </script>
+</body>
+</html>

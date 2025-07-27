@@ -1,0 +1,26 @@
+# Core dependencies
+python-dateutil>=2.8.0
+
+# Web interface dependencies
+flask>=2.0.0
+jinja2>=3.0.0
+
+# Optional dependencies for advanced features
+# Uncomment as needed:
+
+# For raw packet scanning (SYN scans, etc.)
+# scapy>=2.4.5
+
+# For enhanced output formatting
+# rich>=10.0.0
+# colorama>=0.4.4
+
+# For data visualization (future feature)
+# plotly>=5.0.0
+# networkx>=2.6
+
+# For testing and development
+# pytest>=6.0.0
+# pytest-cov>=2.12.0
+# black>=21.0.0
+# flake8>=3.9.0
