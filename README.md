@@ -66,7 +66,7 @@
 ### 📦 Installation
 ```bash
 # Clone the repository
-git clone https://github.com/YourUsername/ScanPro.git
+git clone https://github.com/MAS191/ScanPro
 cd ScanPro
 
 # Install dependencies
@@ -149,3 +149,4 @@ See `USAGE.md` for detailed usage instructions and examples.
 ## License
 
 This project is for educational and authorized security testing purposes only.
+
