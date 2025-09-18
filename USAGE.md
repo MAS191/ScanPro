@@ -12,7 +12,7 @@ All examples in this guide use localhost (127.0.0.1) which is completely legal a
 Install the required dependencies for the web interface:
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/MAS191/ScanPro
 cd portscanner
 pip install flask
 ```
@@ -527,3 +527,4 @@ ScanPro is designed to be modular and extensible. You can:
 4. **Add scan profiles** in the `config/` directory
 
 See the source code for examples and architecture details.
+
